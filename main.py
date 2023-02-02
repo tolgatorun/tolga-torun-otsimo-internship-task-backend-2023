@@ -11,7 +11,8 @@ meal_ingredient_dict = {}
 ingredient_dict = {}
 meal_vegan_vegetarian_dict = {}
 meals_ingredients_wo = data['meals']  #init for meals_ingredients_without options
-
+valid_ingredients = [x['name'] for x in data['ingredients']] #valid ingredient list for quality and price calculation
+#valid_ingredients = [(x[0].lower() + x[1:]) for x in valid_ingredients]
 def ingredient_dict_init():
     for i in ingredients:
         ingredient_dict[i['name']] = i['groups']
@@ -130,8 +131,62 @@ class APIHandler(BaseHTTPRequestHandler):
                 self.send_error(400, 'inappropriate id')
                 self.send_header('Content-Type', 'application/json') 
                 self.end_headers()
-            
-            
+
+    def do_POST(self):
+        self.path, query_params = self.path.split('?')
+        if self.path == '/quality':
+            parameter_list = []
+            parameter_dict = {}
+            for param in query_params.split('&'):
+                parameter_list.append(param)
+            for param in parameter_list:
+                key, value = param.split('=')
+                key = key[0].capitalize() + key[1:]
+                parameter_dict[key] = value
+            if parameter_dict.get('MealID') == None:
+                self.send_error(400, "mealID is a must")
+            for key,value in parameter_dict.items():
+                if key == 'MealID':
+                    pass
+                else:
+                    if key not in valid_ingredients:
+                        print(key)
+                        self.send_error(400, "invalid ingredient")
+                        return
+                    if value != 'high' and value != 'medium' and value != 'low':
+                        self.send_error(400, "inappropriate quality")    
+                        return
+            meal = mealWithID(int(parameter_dict['MealID']))
+            meal_name = meal['name']
+            for key in parameter_dict.keys():
+                if key == 'MealID':
+                    pass
+                else:
+                    if key not in meal_ingredient_dict[meal_name]:
+                        self.send_error(400, 'inappropriate ingredient')
+            quality = 0
+            ingredient_parameter_count = 0
+            for key,value in parameter_dict.items():
+                if key == 'MealID':
+                    pass
+                else:
+                    ingredient_parameter_count += 1
+                    if value == 'high':
+                        quality = quality + 30
+                    if value == 'medium':
+                        quality = quality + 20
+                    if value == 'low':
+                        quality = quality + 10 
+            ingredient_count = len(meal_ingredient_dict[meal_name])
+            ingredient_parameter_count = ingredient_count - ingredient_parameter_count
+            quality = quality + ingredient_parameter_count * 30
+            quality_score = round(quality / ingredient_count, 2)
+            quality_dict = { 'quality': quality_score}
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json') 
+            self.end_headers()
+            self.wfile.write(json.dumps(quality_dict).encode())
+
 
 
 httpd = HTTPServer(('localhost', 8000), APIHandler)
