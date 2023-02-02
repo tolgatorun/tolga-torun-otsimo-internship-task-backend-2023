@@ -10,6 +10,8 @@ ingredients = data['ingredients']
 meal_ingredient_dict = {}
 ingredient_dict = {}
 meal_vegan_vegetarian_dict = {}
+meals_ingredients_wo = data['meals']  #init for meals_ingredients_without options
+
 def ingredient_dict_init():
     for i in ingredients:
         ingredient_dict[i['name']] = i['groups']
@@ -51,29 +53,37 @@ def vegetarian_list_view():
             vegetarian_list.append(meal)
     return vegetarian_list
 
+def meals_ingredients_wo_init():
+    for meal in meals_ingredients_wo:
+        ingredients = []
+        for ingredient in meal['ingredients']:
+            for ingredient_with_options in data['ingredients']:
+                if ingredient_with_options['name'] == ingredient['name']:
+                    ingredients.append(ingredient_with_options)
+        meal['ingredients'] = ingredients
+
+def mealWithID(id):
+    for meal in meals_ingredients_wo:
+        if meal['id'] == id:
+            return meal
+
 
 meal_ingredient_dict_init()
 ingredient_dict_init()
 meal_vegan_vegetarian_dict_init()
+meals_ingredients_wo_init()
 
-
-
-
-#print(meal_ingredient_dict)
-#print(ingredient_dict)
-#for i in meal_vegan_vegetarian_dict:
-#    print(i,'------', meal_vegan_vegetarian_dict[i])
-
-vegan_vegetarian_dict = {
+vegan_vegetarian_dict = { #for /listMeals endpoint
     'is_vegetarian': False,
     'is_vegan': False
 }
-
 
 class APIHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.path, query_params = self.path.split('?')
         query_params = query_params.split('&')
+
+
         if self.path == '/listMeals':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json') 
@@ -82,6 +92,15 @@ class APIHandler(BaseHTTPRequestHandler):
                 'is_vegetarian': False,
                 'is_vegan' : False,
             }
+            vegan_vegetarian_list = []
+            for param in query_params:
+                if len(vegan_vegetarian_list) == 2:
+                    break
+                if 'is_vegetarian' in param:
+                    vegan_vegetarian_list.append(param)
+                if 'is_vegan' in param:
+                    vegan_vegetarian_list.append(param)
+
             for i in range(len(query_params)):
                 dietary_type , bool_value=query_params[i].split('=')
                 if bool_value == 'true':
@@ -95,6 +114,23 @@ class APIHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps(vegetarian_list_view()).encode())
             else:
                 self.wfile.write(json.dumps(data['meals']).encode())
+        
+
+        if self.path == '/getMeal':
+            for param in query_params:
+                if 'id' in param:
+                    _, id = param.split('=') 
+                    id = int(id)
+            if id > 0 and id < len(data['meals']):
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json') 
+                self.end_headers()
+                self.wfile.write(json.dumps(mealWithID(id)).encode())
+            else:
+                self.send_error(400, 'inappropriate id')
+                self.send_header('Content-Type', 'application/json') 
+                self.end_headers()
+            
             
 
 
