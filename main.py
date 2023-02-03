@@ -1,9 +1,10 @@
-import json
+import json, copy
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 f = open('dataset.json')
 
 data = json.load(f)
+data2 = copy.deepcopy(data)
 
 meals = data['meals']
 ingredients = data['ingredients']
@@ -13,6 +14,7 @@ meal_vegan_vegetarian_dict = {}
 meals_ingredients_wo = data['meals']  #init for meals_ingredients_without options
 valid_ingredients = [x['name'] for x in data['ingredients']] #valid ingredient list for quality and price calculation
 #valid_ingredients = [(x[0].lower() + x[1:]) for x in valid_ingredients]
+ingredient_price_dict = {}
 def ingredient_dict_init():
     for i in ingredients:
         ingredient_dict[i['name']] = i['groups']
@@ -68,12 +70,18 @@ def mealWithID(id):
         if meal['id'] == id:
             return meal
 
+def ingredient_price_dict_init():
+    for ingredient in ingredients:
+        price_dict = {}
+        for option in ingredient['options']:
+            price_dict[option['quality']] = option['price']
+        ingredient_price_dict[ingredient['name']] = price_dict
 
 meal_ingredient_dict_init()
 ingredient_dict_init()
 meal_vegan_vegetarian_dict_init()
 meals_ingredients_wo_init()
-
+ingredient_price_dict_init()
 vegan_vegetarian_dict = { #for /listMeals endpoint
     'is_vegetarian': False,
     'is_vegan': False
@@ -108,7 +116,6 @@ class APIHandler(BaseHTTPRequestHandler):
                     vegan_vegetarian_dict[dietary_type] = True
                 else:
                     vegan_vegetarian_dict[dietary_type] = False
-            print(vegan_vegetarian_dict)
             if vegan_vegetarian_dict['is_vegan'] == True:
                 self.wfile.write(json.dumps(vegan_list_view()).encode())
             elif vegan_vegetarian_dict['is_vegetarian'] == True and vegan_vegetarian_dict['is_vegan'] == False:
@@ -133,7 +140,11 @@ class APIHandler(BaseHTTPRequestHandler):
                 self.end_headers()
 
     def do_POST(self):
-        self.path, query_params = self.path.split('?')
+        try:
+            self.path, query_params = self.path.split('?')
+        except ValueError:
+            self.send_error(400, 'meal_id is a must')
+
         if self.path == '/quality':
             parameter_list = []
             parameter_dict = {}
@@ -143,10 +154,10 @@ class APIHandler(BaseHTTPRequestHandler):
                 key, value = param.split('=')
                 key = key[0].capitalize() + key[1:]
                 parameter_dict[key] = value
-            if parameter_dict.get('MealID') == None:
+            if parameter_dict.get('Meal_id') == None:
                 self.send_error(400, "mealID is a must")
             for key,value in parameter_dict.items():
-                if key == 'MealID':
+                if key == 'Meal_id':
                     pass
                 else:
                     if key not in valid_ingredients:
@@ -156,18 +167,19 @@ class APIHandler(BaseHTTPRequestHandler):
                     if value != 'high' and value != 'medium' and value != 'low':
                         self.send_error(400, "inappropriate quality")    
                         return
-            meal = mealWithID(int(parameter_dict['MealID']))
+            meal = mealWithID(int(parameter_dict['Meal_id']))
             meal_name = meal['name']
             for key in parameter_dict.keys():
-                if key == 'MealID':
+                if key == 'Meal_id':
                     pass
                 else:
                     if key not in meal_ingredient_dict[meal_name]:
                         self.send_error(400, 'inappropriate ingredient')
+                        return
             quality = 0
             ingredient_parameter_count = 0
             for key,value in parameter_dict.items():
-                if key == 'MealID':
+                if key == 'Meal_id':
                     pass
                 else:
                     ingredient_parameter_count += 1
@@ -186,6 +198,67 @@ class APIHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json') 
             self.end_headers()
             self.wfile.write(json.dumps(quality_dict).encode())
+        
+            
+        if self.path == '/price':
+            parameter_list = []
+            parameter_dict = {}
+            ingredient_quantity_dict = {}
+            ingredient_quality_dict = {}
+            for param in query_params.split('&'):
+                parameter_list.append(param)
+            for param in parameter_list:
+                key, value = param.split('=')
+                key = key[0].capitalize() + key[1:]
+                parameter_dict[key] = value
+            if parameter_dict.get('Meal_id') == None:
+                self.send_error(400, "meal_id is a must")
+            for key,value in parameter_dict.items():
+                if key == 'Meal_id':
+                    pass
+                else:
+                    if key not in valid_ingredients:
+                        print(key)
+                        self.send_error(400, "invalid ingredient")
+                        return
+                    if value != 'high' and value != 'medium' and value != 'low':
+                        self.send_error(400, "inappropriate quality")    
+                        return
+            meal = mealWithID(int(parameter_dict['Meal_id']))
+            meal_name = meal['name']
+            for key in parameter_dict.keys():
+                if key == 'Meal_id':
+                    pass
+                else:
+                    if key not in meal_ingredient_dict[meal_name]:
+                        self.send_error(400, 'inappropriate ingredient')
+            meal_ingredient = data2['meals'][int(parameter_dict['Meal_id'])-1]['ingredients']
+            for ingredient in meal_ingredient:
+                ingredient_quantity_dict[ingredient['name']] = ingredient['quantity']
+            ingredient_list = meal_ingredient_dict[meal_name]
+            for ingredient in ingredient_list:
+                ingredient_quality_dict[ingredient] = 'high'
+            for key,value in parameter_dict.items():
+                if key == 'Meal_id':
+                    pass
+                else:
+                    ingredient_quality_dict[key] = value
+            total_price = 0
+            for ingredient in ingredient_list:
+                total_price += ingredient_quantity_dict[ingredient]/1000 * ingredient_price_dict[ingredient][ingredient_quality_dict[ingredient]]
+            for ingredient,quality in ingredient_quality_dict.items():
+                if quality == 'high':
+                    pass
+                if quality == 'medium':
+                    total_price += 0.05
+                if quality == 'low':
+                    total_price += 0.10
+            total_price = round(total_price, 2)
+            price_dict = { 'price': total_price}
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json') 
+            self.end_headers()
+            self.wfile.write(json.dumps(price_dict).encode())
 
 
 
